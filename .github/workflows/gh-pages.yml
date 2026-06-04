@@ -1,45 +1,51 @@
-name: Publish Document
+name: Deploy (GitHub Pages)
+
+# Zero-credential MkDocs deploy: build on Actions, publish via the built-in
+# GITHUB_TOKEN. No custom PAT, no gh-pages branch, no CNAME (fork test).
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main  # Trigger this workflow whenever the main branch changes
-    workflow_dispatch:    # Allow manual triggering of this workflow via the "Run workflow" button on the GitHub UI Actions tab
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4  # Action that checks out the repository
-      with:
-        persist-credentials: false   # Disable auto-injection of GITHUB_TOKEN so a higher-privilege token can be supplied in later steps
-        fetch-depth: 0   # Required by mkdocs-git-revision-date-localized-plugin to compute per-page last-updated
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # mkdocs-git-revision-date-localized-plugin needs full history
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.x   # Install Python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pygments==2.17.2 pymdown-extensions
-        pip install mkdocs-exclude
-        pip install mkdocs-material==9.6.8
-        pip install jieba==0.42.1   # Install dependency
-        pip install mkdocs-swagger-ui-tag
-        pip install mkdocs-redirects==1.2.2   # legacy hyphenated URLs → current underscore URLs
-        pip install mkdocs-git-revision-date-localized-plugin==1.4.7   # per-page last-updated from git history
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    - name: Build the document
-      run: mkdocs build  # Build the MkDocs site
+      - name: Build MkDocs site
+        run: mkdocs build   # output -> site/
 
-    - name: Add CNAME file
-      run: echo 'docs.justlend.org' > site/CNAME
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
 
-    - name: Deploy
-      uses: JamesIves/github-pages-deploy-action@v4
-      with:
-        token: ${{ secrets.TOKEN}}
-        branch: gh-pages # Publish the built site to the gh-pages branch
-        folder: site # MkDocs default build output directory
-
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
